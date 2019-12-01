@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -22,7 +23,36 @@ type Kripto struct {
 	Volume24h         string
 }
 
-func handler(w http.ResponseWriter, r *http.Request) {
+func handlerJSON(w http.ResponseWriter, r *http.Request) {
+	p := scrap()
+
+	b, err := json.Marshal(p)
+	if err != nil {
+		log.Println("failed to serialize response:", err)
+		return
+	}
+
+	w.Header().Add("Content-Type", "application/json")
+	w.Write(b)
+}
+
+func handlerCSV(w http.ResponseWriter, r *http.Request) {
+	p := scrap()
+
+	w.Header().Set("Content-Type", "text/csv")
+	w.Header().Set("Content-Disposition", "attachment;filename=results.csv")
+
+	wr := csv.NewWriter(w)
+	defer wr.Flush()
+
+	wr.Write([]string{"Name", "Symbol", "Market capacity (USD)", "Price (USD)", "Circulating Supply", "Volume (USD)"})
+
+	for _, coin := range p.Market {
+		wr.Write([]string{coin.Name, coin.Symbol, coin.MarketCap, coin.Price, coin.CirculatingSupply, coin.Volume24h})
+	}
+}
+
+func scrap() *pageInfo {
 	c := colly.NewCollector()
 
 	p := &pageInfo{Market: []Kripto{}}
@@ -51,20 +81,14 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
 	c.Visit("https://coinmarketcap.com/all/views/all/")
 
-	b, err := json.Marshal(p)
-	if err != nil {
-		log.Println("failed to serialize response:", err)
-		return
-	}
-
-	w.Header().Add("Content-Type", "application/json")
-	w.Write(b)
+	return p
 }
 
 func main() {
 	addr := ":7171"
 
-	http.HandleFunc("/", handler)
+	http.HandleFunc("/json", handlerJSON)
+	http.HandleFunc("/csv", handlerCSV)
 
 	log.Println("listening on", addr)
 	log.Fatal(http.ListenAndServe(addr, nil))
